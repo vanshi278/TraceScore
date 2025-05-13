@@ -1,52 +1,100 @@
-import subprocess
-import requests
-import time
+from git import Repo, InvalidGitRepositoryError
+import sys
+import os
+import google.generativeai as genai
+from datetime import datetime
 
-API_KEY = "AIzaSyAXfDBDNs6rPXzyHtEKHcR047ml7AySTMo"
-ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+# --- CONFIG ---
+REPO_PATH = "/Users/vanshikaagarwal/Desktop/Coding/TestingTraceScore"
+DEVELOPER = "vanshikaagarwal278@gmail.com"
+GEMINI_API_KEY = "AIzaSyAXfDBDNs6rPXzyHtEKHcR047ml7AySTMo"  # Replace with your Gemini API key
 
-def get_all_commit_hashes():
-    result = subprocess.run(["git", "log", "--pretty=format:%H"], stdout=subprocess.PIPE, text=True)
-    return result.stdout.strip().split("\n")
-
-def get_commit_diff(commit_hash):
-    result = subprocess.run(["git", "show", commit_hash, "--no-color"], stdout=subprocess.PIPE, text=True)
-    return result.stdout.strip()
-
-def summarize_with_gemini(diff_text):
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": f"Review or summarize the following Git commit:\n\n{diff_text}"
-                    }
-                ]
-            }
-        ]
-    }
-    response = requests.post(f"{ENDPOINT}?key={API_KEY}", headers=headers, json=payload)
+def get_code_summary(commit_data):
+    """Get summary of code changes using Gemini API"""
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-2.0-flash")
     
-    if response.status_code == 200:
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    else:
-        print(f"Error {response.status_code}: {response.text}")
-        return "Error summarizing."
+    prompt = f"""
+    Analyze this git commit and summarize the changes:
+    Commit: {commit_data['hash']}
+    Date: {commit_data['date']}
+    Message: {commit_data['message']}
+    
+    Changed files and their contents:
+    {commit_data['files_content']}
+    
+    Please provide:
+    1. A brief summary of the changes
+    2. Key modifications made
+    3. Potential impact of changes
+    """
+    
+    response = model.generate_content(prompt)
+    return response.text
 
-def main():
-    commit_hashes = get_all_commit_hashes()
-    print(f"📦 Found {len(commit_hashes)} commits.")
+try:
+    repo = Repo(REPO_PATH)
+    
+    print(f"\nAnalyzing commits by {DEVELOPER}:\n")
+    found_commits = False
+    
+    for commit in repo.iter_commits():
+        if (commit.author.email.lower() == DEVELOPER.lower() or 
+            commit.author.name.lower() == DEVELOPER.lower()):
+            found_commits = True
+            
+            # Print detailed commit information
+            print(f"\nCommit: {commit.hexsha}")
+            print(f"Author: {commit.author.name} <{commit.author.email}>")
+            print(f"Date: {commit.committed_datetime}")
+            print(f"Message: {commit.message.strip()}")
+            print("\nChanged files:")
+            print("=" * 80)
+            
+            # Get the list of changed files and their contents
+            if commit.parents:
+                diffs = commit.diff(commit.parents[0])
+            else:
+                diffs = commit.diff(None)
+                
+            for diff in diffs:
+                print(f"\nFile: {diff.a_path}")
+                print("-" * 40)
+                try:
+                    if diff.b_blob:
+                        content = diff.b_blob.data_stream.read().decode('utf-8')
+                        print(content)
+                except UnicodeDecodeError:
+                    print("(Binary file)")
+                print("-" * 40)
+            
+            # Prepare commit data for Gemini analysis
+            commit_data = {
+                'hash': commit.hexsha,
+                'date': commit.committed_datetime,
+                'message': commit.message.strip(),
+                'files_content': []
+            }
+            
+            # Get all files in the commit's tree for analysis
+            for item in commit.tree.traverse():
+                if item.type == 'blob':
+                    try:
+                        content = item.data_stream.read().decode('utf-8')
+                        commit_data['files_content'].append(f"\nFile: {item.path}\n{content}")
+                    except UnicodeDecodeError:
+                        commit_data['files_content'].append(f"\nFile: {item.path}\n(Binary file)")
+            
+            # Get and print summary from Gemini
+            print("\nGemini Analysis:")
+            print("=" * 80)
+            print(get_code_summary(commit_data))
+            print("=" * 80)
 
-    for i, commit_hash in enumerate(reversed(commit_hashes), start=1):  # Oldest to newest
-        print(f"\n🔄 [{i}/{len(commit_hashes)}] Commit {commit_hash}")
-        diff = get_commit_diff(commit_hash)
-        if len(diff) > 12000:
-            print("⚠️ Commit too large, skipping or truncate manually.")
-            continue
-        summary = summarize_with_gemini(diff)
-        print(f"🧠 Gemini Review:\n{summary}")
-        time.sleep(1)  # Avoid rate limits
+    if not found_commits:
+        print(f"No commits found by {DEVELOPER}")
 
-if __name__ == "__main__":
-    main()
+except InvalidGitRepositoryError:
+    print(f"Error: '{REPO_PATH}' is not a valid Git repository")
+except Exception as e:
+    print(f"An error occurred: {e}")
