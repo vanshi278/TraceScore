@@ -35,64 +35,57 @@ def get_code_summary(commit_data):
 try:
     repo = Repo(REPO_PATH)
     
-    print(f"\nAnalyzing commits by {DEVELOPER}:\n")
-    found_commits = False
+    # Get the latest commit
+    latest_commit = next(repo.iter_commits())
     
-    for commit in repo.iter_commits():
-        if (commit.author.email.lower() == DEVELOPER.lower() or 
-            commit.author.name.lower() == DEVELOPER.lower()):
-            found_commits = True
+    if (latest_commit.author.email.lower() == DEVELOPER.lower() or 
+        latest_commit.author.name.lower() == DEVELOPER.lower()):
+        
+        print(f"\nAnalyzing latest commit:\n")
+        
+        # Print detailed commit information
+        print(f"Commit: {latest_commit.hexsha}")
+        print(f"Author: {latest_commit.author.name} <{latest_commit.author.email}>")
+        print(f"Date: {latest_commit.committed_datetime}")
+        print(f"Message: {latest_commit.message.strip()}")
+        print("\nChanged files:")
+        print("=" * 80)
+        
+        # Get the list of changed files and their contents
+        if latest_commit.parents:
+            diffs = latest_commit.diff(latest_commit.parents[0])
+        else:
+            diffs = latest_commit.diff(None)
             
-            # Print detailed commit information
-            print(f"\nCommit: {commit.hexsha}")
-            print(f"Author: {commit.author.name} <{commit.author.email}>")
-            print(f"Date: {commit.committed_datetime}")
-            print(f"Message: {commit.message.strip()}")
-            print("\nChanged files:")
-            print("=" * 80)
-            
-            # Get the list of changed files and their contents
-            if commit.parents:
-                diffs = commit.diff(commit.parents[0])
-            else:
-                diffs = commit.diff(None)
-                
-            for diff in diffs:
-                print(f"\nFile: {diff.a_path}")
-                print("-" * 40)
-                try:
-                    if diff.b_blob:
-                        content = diff.b_blob.data_stream.read().decode('utf-8')
-                        print(content)
-                except UnicodeDecodeError:
-                    print("(Binary file)")
-                print("-" * 40)
-            
-            # Prepare commit data for Gemini analysis
-            commit_data = {
-                'hash': commit.hexsha,
-                'date': commit.committed_datetime,
-                'message': commit.message.strip(),
-                'files_content': []
-            }
-            
-            # Get all files in the commit's tree for analysis
-            for item in commit.tree.traverse():
-                if item.type == 'blob':
-                    try:
-                        content = item.data_stream.read().decode('utf-8')
-                        commit_data['files_content'].append(f"\nFile: {item.path}\n{content}")
-                    except UnicodeDecodeError:
-                        commit_data['files_content'].append(f"\nFile: {item.path}\n(Binary file)")
-            
-            # Get and print summary from Gemini
-            print("\nGemini Analysis:")
-            print("=" * 80)
-            print(get_code_summary(commit_data))
-            print("=" * 80)
-
-    if not found_commits:
-        print(f"No commits found by {DEVELOPER}")
+        # Prepare commit data for Gemini analysis
+        commit_data = {
+            'hash': latest_commit.hexsha,
+            'date': latest_commit.committed_datetime,
+            'message': latest_commit.message.strip(),
+            'files_content': []
+        }
+        
+        # Get changed files content
+        for diff in diffs:
+            print(f"\nFile: {diff.a_path}")
+            print("-" * 40)
+            try:
+                if diff.b_blob:
+                    content = diff.b_blob.data_stream.read().decode('utf-8')
+                    print(content)
+                    commit_data['files_content'].append(f"\nFile: {diff.a_path}\n{content}")
+            except UnicodeDecodeError:
+                print("(Binary file)")
+                commit_data['files_content'].append(f"\nFile: {diff.a_path}\n(Binary file)")
+            print("-" * 40)
+        
+        # Get and print summary from Gemini
+        print("\nGemini Analysis:")
+        print("=" * 80)
+        print(get_code_summary(commit_data))
+        print("=" * 80)
+    else:
+        print(f"Latest commit was not made by {DEVELOPER}")
 
 except InvalidGitRepositoryError:
     print(f"Error: '{REPO_PATH}' is not a valid Git repository")
