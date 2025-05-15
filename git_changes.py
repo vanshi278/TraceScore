@@ -7,13 +7,39 @@ from datetime import datetime
 # --- CONFIG ---
 REPO_PATH = "/Users/vanshikaagarwal/Desktop/Coding/TestingTraceScore"
 DEVELOPER = "vanshikaagarwal278@gmail.com"
-GEMINI_API_KEY = "AIzaSyAXfDBDNs6rPXzyHtEKHcR047ml7AySTMo"  # Replace with your Gemini API key
+GEMINI_API_KEY = "AIzaSyAXfDBDNs6rPXzyHtEKHcR047ml7AySTMo"
 
-def get_code_summary(commit_data):
-    """Get summary of code changes using Gemini API"""
+def setup_gemini():
+    """Configure Gemini API"""
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    return genai.GenerativeModel("gemini-2.0-flash")
+
+def get_commit_changes(commit):
+    """Get list of changed files and their contents from a commit"""
+    if commit.parents:
+        diffs = commit.parents[0].diff(commit)
+    else:
+        diffs = commit.diff(None)
     
+    changed_files = []
+    for diff in diffs:
+        try:
+            if diff.b_blob:
+                content = diff.b_blob.data_stream.read().decode('utf-8')
+                changed_files.append(f"\nFile: {diff.a_path}\n{content}")
+                # Print for user feedback
+                print(f"\nFile: {diff.a_path}")
+                print("-" * 40)
+                print(content)
+                print("-" * 40)
+        except UnicodeDecodeError:
+            changed_files.append(f"\nFile: {diff.a_path}\n(Binary file)")
+            print(f"\nFile: {diff.a_path}\n(Binary file)")
+    
+    return changed_files
+
+def analyze_commit(model, commit_data):
+    """Get AI analysis of commit changes"""
     prompt = f"""
     Analyze this git commit and summarize the changes:
     Commit: {commit_data['hash']}
@@ -26,24 +52,25 @@ def get_code_summary(commit_data):
     Please provide:
     1. A brief summary of the changes
     2. Key modifications made
-    3. Potential impact of changes
     """
-    
-    response = model.generate_content(prompt)
-    return response.text
+    return model.generate_content(prompt).text
 
-try:
-    repo = Repo(REPO_PATH)
-    
-    # Get the latest commit
-    latest_commit = next(repo.iter_commits())
-    
-    if (latest_commit.author.email.lower() == DEVELOPER.lower() or 
-        latest_commit.author.name.lower() == DEVELOPER.lower()):
+def main():
+    try:
+        # Initialize repository and Gemini
+        repo = Repo(REPO_PATH)
+        model = setup_gemini()
         
+        # Get latest commit
+        latest_commit = repo.head.commit
+        
+        if not (latest_commit.author.email.lower() == DEVELOPER.lower() or 
+                latest_commit.author.name.lower() == DEVELOPER.lower()):
+            print(f"Latest commit was not made by {DEVELOPER}")
+            return
+        
+        # Print commit information
         print(f"\nAnalyzing latest commit:\n")
-        
-        # Print detailed commit information
         print(f"Commit: {latest_commit.hexsha}")
         print(f"Author: {latest_commit.author.name} <{latest_commit.author.email}>")
         print(f"Date: {latest_commit.committed_datetime}")
@@ -51,43 +78,27 @@ try:
         print("\nChanged files:")
         print("=" * 80)
         
-        # Get the list of changed files and their contents
-        if latest_commit.parents:
-            diffs = latest_commit.diff(latest_commit.parents[0])
-        else:
-            diffs = latest_commit.diff(None)
-            
-        # Prepare commit data for Gemini analysis
+        # Get changed files
+        changed_files = get_commit_changes(latest_commit)
+        
+        # Prepare data for analysis
         commit_data = {
             'hash': latest_commit.hexsha,
             'date': latest_commit.committed_datetime,
             'message': latest_commit.message.strip(),
-            'files_content': []
+            'files_content': changed_files
         }
         
-        # Get changed files content
-        for diff in diffs:
-            print(f"\nFile: {diff.a_path}")
-            print("-" * 40)
-            try:
-                if diff.b_blob:
-                    content = diff.b_blob.data_stream.read().decode('utf-8')
-                    print(content)
-                    commit_data['files_content'].append(f"\nFile: {diff.a_path}\n{content}")
-            except UnicodeDecodeError:
-                print("(Binary file)")
-                commit_data['files_content'].append(f"\nFile: {diff.a_path}\n(Binary file)")
-            print("-" * 40)
-        
-        # Get and print summary from Gemini
+        # Get and print AI analysis
         print("\nGemini Analysis:")
         print("=" * 80)
-        print(get_code_summary(commit_data))
+        print(analyze_commit(model, commit_data))
         print("=" * 80)
-    else:
-        print(f"Latest commit was not made by {DEVELOPER}")
 
-except InvalidGitRepositoryError:
-    print(f"Error: '{REPO_PATH}' is not a valid Git repository")
-except Exception as e:
-    print(f"An error occurred: {e}")
+    except InvalidGitRepositoryError:
+        print(f"Error: '{REPO_PATH}' is not a valid Git repository")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
