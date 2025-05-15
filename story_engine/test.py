@@ -2,9 +2,15 @@ import requests
 from requests.auth import HTTPBasicAuth
 import google.generativeai as genai
 
-# Replace these
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # load variables from .env file into environment
+api_key = os.getenv("GOOGLE_API_KEY")
+api_token = os.getenv("JIRA_API_KEY")  # ✅ safer
+
+
 email = 'vanshikaagarwal278@gmail.com'
-api_token = 'ATATT3xFfGF0aNvQkKdhgjmnGXSPS4k4jaZPh-q6nrVQxTJGJPfvaXXKvLs4HBiv9xTUtK0pI1GjV6jyZvuZMCb8rBLYHgBf9seagDqUvFXfowA0228yzttLEcg1niH3cKEVy1x5sRdgWID9gyY3VqZ1aOiESVSGxdljwFpgW6DlDxHaxc_beeY=65BF3C56'
 domain = 'vanshikaagarwal278.atlassian.net'
 project_key = 'TRAC' 
 
@@ -12,8 +18,8 @@ url = f"https://{domain}/rest/api/3/search"
 
 query = {
     'jql': f'project = {project_key} AND issuetype = Story',
-    'maxResults': 50,
-    'fields': 'summary,status,assignee'
+    'maxResults': 200,
+    'fields': 'summary,description,status,assignee'
 }
 
 headers = {
@@ -22,32 +28,31 @@ headers = {
 
 auth = HTTPBasicAuth(email, api_token)
 
+
 response = requests.get(url, headers=headers, params=query, auth=auth)
 
+
 data = response.json()
+if 'issues' not in data:
+    print("No issues found in response")
+    print(f"Response data: {data}")
+    exit(1)
 
-
-
+# Continue with the rest of your code
 
 # --- GEMINI PART ---
 
-# Replace with your Gemini API key
-genai.configure(api_key="AIzaSyAXfDBDNs6rPXzyHtEKHcR047ml7AySTMo")
-
+genai.configure(api_key=api_key)
 model = genai.GenerativeModel(model_name="gemini-2.0-flash")
 
-def extract_insights_from_story(story_text):
-    prompt = f"""Analyze the following Jira user story:
-
-"{story_text}"
-
-
-Extract the following:
-- Key Actions (in bullet points)
-- Intent (one line)
-- Expected Entities (in a list)
-while giving the answer don't give bracket words
-"""
+def extract_insights_from_story(story_text, description):
+    prompt = f"""Analyze the following Jira user story: "{story_text}"
+    The story is about a {description}.
+    Extract the following:
+    - Key Actions (in bullet points)
+    - Intent (one line)
+    - Expected Entities (in a list)
+    while giving the answer don't give bracket words """
 
     response = model.generate_content(prompt)
     return response.text
@@ -58,7 +63,8 @@ while giving the answer don't give bracket words
 for issue in data['issues']:
     story_key = issue['key']
     summary = issue['fields']['summary']
+    description = issue['fields'].get('description', 'No description provided')
     
-    print(f"\nStory: {story_key} - {summary}")
-    result = extract_insights_from_story(summary)
+    print(f"\nStory: {story_key} - {summary} \n\nDescription: {description}")
+    result = extract_insights_from_story(summary, description)
     print(result)

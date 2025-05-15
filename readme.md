@@ -1,7 +1,6 @@
- jira_api_key = 'ATATT3xFfGF0aNvQkKdhgjmnGXSPS4k4jaZPh-q6nrVQxTJGJPfvaXXKvLs4HBiv9xTUtK0pI1GjV6jyZvuZMCb8rBLYHgBf9seagDqUvFXfowA0228yzttLEcg1niH3cKEVy1x5sRdgWID9gyY3VqZ1aOiESVSGxdljwFpgW6DlDxHaxc_beeY=65BF3C56'
+
 
 
  jira_story_actions = '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'
 
 
- gemni_api_key ="AIzaSyAXfDBDNs6rPXzyHtEKHcR047ml7AySTMo"
